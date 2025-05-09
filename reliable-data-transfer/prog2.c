@@ -38,14 +38,14 @@ void save_last_sent_packet(pkt_t packet)
 }
 
 
-// As per the assignment specification, 
-// we can just decline to give a message if we are still waiting 
-// for the acknowledgement of a previous one.
-
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(msg_t message)
 {
+	// As per the assignment specification, 
+	// we can just decline to give a message if we are still waiting 
+	// for the acknowledgement of a previous one.
 	if (a_state->awaiting_reply) {
+		printf(" %s | awaiting reply on packet seqnum:%d, terminating\n", __func__, a_state->seq_num);
 		return;
 	}
 
@@ -79,10 +79,14 @@ void B_output(msg_t message)  /* need be completed only for extra credit */
 void A_input(pkt_t packet)
 {
 	// What packet did they acknowledge? If they acknowledged the packet we last sent, then we are good.
-	if (packet.seqnum == a_state->seq_num) {
+	if (packet.acknum == a_state->tmp_packet.seqnum) {
+		printf("%s | acknowledgement packet received acknum:%d\n", __func__, packet.acknum);
 		a_state->awaiting_reply = 0;
 		return;
 	} else {
+		printf("%s | acknowledgement packet received acknum:%d resending packet seqnum:%d\n", 
+			__func__, packet.acknum, a_state->tmp_packet.seqnum);
+
 		// Resend the packet	
 		tolayer3(0, a_state->tmp_packet);	
 		a_state->awaiting_reply = 1;
@@ -114,7 +118,12 @@ void A_init()
 /* called from layer 3, when a packet arrives for layer 4 at B*/
 void B_input(pkt_t packet)
 {	
-	pkt_t ack_packet = {0, b_state->last_acknowledged_packet, 0, 0};
+	if (TRACE >= 2) {
+		printf(" %s | packet received seqnum:%d acknum:%d checksum:%d payload:", __func__, packet.seqnum, packet.acknum, packet.checksum);
+		for (int i = 0; i < 20; ++i) printf("%c", packet.payload[i]);
+		printf("\n");
+	}
+
 	
 	int corrupt = 0;
 	// corruption if they send the wrong number
@@ -126,12 +135,18 @@ void B_input(pkt_t packet)
 		corrupt = 1;
 
 	if (!corrupt) {
-		b_state->last_acknowledged_packet = packet.seqnum;
+
+		if (TRACE >= 2)
+			printf(" %s | sending packet upstairs\n", __func__);
 
 		// send the message upstairs
-
 		tolayer5(1, packet.payload);
+		b_state->last_acknowledged_packet = packet.seqnum;
 	}
+
+	pkt_t ack_packet = {0, b_state->last_acknowledged_packet, 0, 0};
+	if (TRACE >= 2)
+		printf(" %s | sending acknowledgement packet acknum:%d\n", __func__, ack_packet.acknum);
 
 	// send the acknowledgement
 	tolayer3(1, ack_packet);
